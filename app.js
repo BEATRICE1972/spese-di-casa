@@ -12,11 +12,12 @@
     return {
       spese: [],
       categorie: R.CATEGORIE_DI_PARTENZA.map(function (c) { return { nome: c.nome, parole: c.parole.slice() }; }),
-      budget: {},
+      budgetAnni: {},   // { "2026": { "Carburante": 80, ... }, "2027": {...} } budget mensile per anno
       imparate: {},
       ultimaCopia: null
     };
   }
+  function annoOggi() { return String(new Date().getFullYear()); }
   var memoriaFunziona = true;
   function carica() {
     try {
@@ -24,10 +25,13 @@
       if (!testo) return statoVuoto();
       var s = JSON.parse(testo);
       var vuoto = statoVuoto();
+      var budgetAnni = s.budgetAnni && typeof s.budgetAnni === "object" ? s.budgetAnni : {};
+      // Prima versione: un solo budget per tutti gli anni -> diventa il budget dell'anno in corso.
+      if (s.budget && typeof s.budget === "object" && Object.keys(s.budget).length && !Object.keys(budgetAnni).length) budgetAnni[annoOggi()] = s.budget;
       return {
         spese: Array.isArray(s.spese) ? s.spese : [],
         categorie: Array.isArray(s.categorie) && s.categorie.length ? s.categorie : vuoto.categorie,
-        budget: s.budget && typeof s.budget === "object" ? s.budget : {},
+        budgetAnni: budgetAnni,
         imparate: s.imparate && typeof s.imparate === "object" ? s.imparate : {},
         ultimaCopia: s.ultimaCopia || null
       };
@@ -301,9 +305,15 @@
   }
   function disegnaSpese() {
     riempiSceltaCategorie($("filtro-categoria"), true);
-    if (!$("filtro-mese").value) $("filtro-mese").value = oggiIso().slice(0, 7);
-    var mese = $("filtro-mese").value, cat = $("filtro-categoria").value;
-    var lista = ordinate().filter(function (s) { return (!mese || s.data.slice(0, 7) === mese) && (!cat || s.categoria === cat); });
+    riempiAnni($("filtro-anno"), true);
+    var selMese = $("filtro-mese");
+    if (!selMese.options.length) {
+      var tutti = document.createElement("option"); tutti.value = ""; tutti.textContent = "Tutti i mesi"; selMese.appendChild(tutti);
+      NOMI_MESI.forEach(function (n, i) { var o = document.createElement("option"); o.value = String(i + 1).padStart(2, "0"); o.textContent = n; selMese.appendChild(o); });
+      selMese.value = oggiIso().slice(5, 7);
+    }
+    var anno = $("filtro-anno").value, mese = selMese.value, cat = $("filtro-categoria").value;
+    var lista = ordinate().filter(function (s) { return (!anno || s.data.slice(0, 4) === anno) && (!mese || s.data.slice(5, 7) === mese) && (!cat || s.categoria === cat); });
     var ul = $("elenco-spese"); ul.textContent = "";
     var totale = 0;
     lista.forEach(function (s) { totale += s.importo; ul.appendChild(voceSpesa(s)); });
@@ -311,38 +321,61 @@
     $("conteggio-spese").textContent = lista.length + (lista.length === 1 ? " spesa" : " spese");
     $("totale-spese").textContent = euro.format(arrotonda(totale));
   }
+  $("filtro-anno").addEventListener("change", disegnaSpese);
   $("filtro-mese").addEventListener("change", disegnaSpese);
   $("filtro-categoria").addEventListener("change", disegnaSpese);
 
   // ---------- budget e consuntivo ----------
+  // Anni da scegliere: dall'anno scorso (o dalla spesa più vecchia) fino all'anno prossimo.
   function anniDisponibili() {
-    var anni = {};
-    anni[new Date().getFullYear()] = true;
-    stato.spese.forEach(function (s) { anni[s.data.slice(0, 4)] = true; });
-    return Object.keys(anni).map(Number).sort(function (a, b) { return b - a; });
+    var oggi = Number(annoOggi()), primo = oggi - 1, ultimo = oggi + 1;
+    stato.spese.forEach(function (s) { var a = Number(s.data.slice(0, 4)); if (a < primo) primo = a; if (a > ultimo) ultimo = a; });
+    Object.keys(stato.budgetAnni).forEach(function (a) { a = Number(a); if (a < primo) primo = a; if (a > ultimo) ultimo = a; });
+    var anni = [];
+    for (var a = ultimo; a >= primo; a--) anni.push(String(a));
+    return anni;
+  }
+  function riempiAnni(sel, conTutti) {
+    var primaVolta = !sel.dataset.pronto, scelto = sel.value, anni = anniDisponibili();
+    sel.textContent = "";
+    if (conTutti) { var t = document.createElement("option"); t.value = ""; t.textContent = "Tutti"; sel.appendChild(t); }
+    anni.forEach(function (a) { var o = document.createElement("option"); o.value = a; o.textContent = a; sel.appendChild(o); });
+    if (primaVolta || (!(conTutti && scelto === "") && anni.indexOf(scelto) === -1)) scelto = annoOggi();
+    sel.value = scelto;
+    sel.dataset.pronto = "1";
+  }
+  // Budget mensile di un anno: il suo, oppure (se non l'hai ancora scritto) quello dell'ultimo anno prima.
+  function budgetDi(anno) {
+    if (stato.budgetAnni[anno]) return { valori: stato.budgetAnni[anno], daAnno: anno };
+    var prima = Object.keys(stato.budgetAnni).filter(function (a) { return a < anno; }).sort();
+    if (prima.length) return { valori: stato.budgetAnni[prima[prima.length - 1]], daAnno: prima[prima.length - 1] };
+    return { valori: {}, daAnno: null };
+  }
+  function mesiPerPeriodo(anno, periodo) {
+    var oggi = new Date();
+    var meseFinale = Number(anno) < oggi.getFullYear() ? 12 : Number(anno) > oggi.getFullYear() ? 0 : oggi.getMonth() + 1;
+    return { mesi: periodo === "anno" ? 12 : periodo === "finora" ? meseFinale : 1, meseFinale: meseFinale };
   }
   function disegnaConti() {
     var selAnno = $("conti-anno"), selPeriodo = $("conti-periodo");
-    var annoScelto = selAnno.value || String(new Date().getFullYear());
-    selAnno.textContent = "";
-    anniDisponibili().forEach(function (a) { var o = document.createElement("option"); o.value = a; o.textContent = a; selAnno.appendChild(o); });
-    selAnno.value = annoScelto;
+    riempiAnni(selAnno, false);
+    var annoScelto = selAnno.value;
     if (!selPeriodo.options.length) {
       var o0 = document.createElement("option"); o0.value = "anno"; o0.textContent = "Tutto l'anno"; selPeriodo.appendChild(o0);
       var o1 = document.createElement("option"); o1.value = "finora"; o1.textContent = "Da gennaio a oggi"; selPeriodo.appendChild(o1);
-      NOMI_MESI.forEach(function (n, i) { var o = document.createElement("option"); o.value = String(i + 1).padStart(2, "0"); o.textContent = n; selPeriodo.appendChild(o); });      selPeriodo.value = "finora";
+      NOMI_MESI.forEach(function (n, i) { var o = document.createElement("option"); o.value = String(i + 1).padStart(2, "0"); o.textContent = n; selPeriodo.appendChild(o); });
+      selPeriodo.value = "finora";
     }
     var periodo = selPeriodo.value || "anno";
-    var oggi = new Date();
-    var meseFinale = Number(annoScelto) < oggi.getFullYear() ? 12 : Number(annoScelto) > oggi.getFullYear() ? 0 : oggi.getMonth() + 1;
-    var mesi = periodo === "anno" ? 12 : periodo === "finora" ? meseFinale : 1;
+    var mp = mesiPerPeriodo(annoScelto, periodo), mesi = mp.mesi, meseFinale = mp.meseFinale;
+    var bud = budgetDi(annoScelto).valori;
     var dentro = function (data) {
       if (data.slice(0, 4) !== annoScelto) return false;
       if (periodo === "anno") return true;
       if (periodo === "finora") return Number(data.slice(5, 7)) <= meseFinale;
       return data.slice(5, 7) === periodo;
     };
-    $("titolo-consuntivo").textContent = "Consuntivo " + (periodo === "anno" ? annoScelto : periodo === "finora" ? "da gennaio a " + (meseFinale ? NOMI_MESI[meseFinale - 1].toLowerCase() : "oggi") + " " + annoScelto : NOMI_MESI[Number(periodo) - 1] + " " + annoScelto);
+    $("titolo-consuntivo").textContent = "Consuntivo " + (periodo === "anno" ? annoScelto : periodo === "finora" ? (meseFinale ? "da gennaio a " + NOMI_MESI[meseFinale - 1].toLowerCase() + " " + annoScelto : annoScelto + " (anno non ancora iniziato)") : NOMI_MESI[Number(periodo) - 1] + " " + annoScelto);
 
     var speso = {};
     stato.spese.forEach(function (s) { if (dentro(s.data)) speso[s.categoria] = (speso[s.categoria] || 0) + s.importo; });
@@ -355,7 +388,7 @@
     var tb = t.createTBody();
     var totB = 0, totS = 0;
     nomi.forEach(function (n) {
-      var b = arrotonda((Number(stato.budget[n]) || 0) * mesi);
+      var b = arrotonda((Number(bud[n]) || 0) * mesi);
       var s = arrotonda(speso[n] || 0);
       if (!b && !s) return;
       totB += b; totS += s;
@@ -379,7 +412,14 @@
     [["Totale", ""], [euro.format(arrotonda(totB)), "num"], [euro.format(arrotonda(totS)), "num"], [(dt > 0 ? "+" : "") + euro.format(dt), "num " + (totB ? (dt > 0 ? "su" : "giu") : "")]].forEach(function (v) {
       var c = fr.insertCell(); c.textContent = v[0]; c.className = v[1];
     });
-
+    disegnaBudget(annoScelto);
+  }
+  function disegnaBudget(anno) {
+    var info = budgetDi(anno), bud = info.valori;
+    $("titolo-budget").textContent = "Budget mensile per categoria " + anno;
+    $("nota-budget-anno").textContent = info.daAnno && info.daAnno !== anno
+      ? "Per il " + anno + " non hai ancora scritto un budget: vedi quello del " + info.daAnno + ". Se cambi una cifra, diventa il budget del " + anno + " (il " + info.daAnno + " resta com'è)."
+      : "";
     var tb2 = $("tabella-budget"); tb2.textContent = "";
     var h2 = tb2.createTHead().insertRow();
     ["Categoria", "Al mese", "All'anno"].forEach(function (h) { var th = document.createElement("th"); th.textContent = h; h2.appendChild(th); });
@@ -390,16 +430,18 @@
       var c = r.insertCell();
       var inp = document.createElement("input");
       inp.type = "text"; inp.inputMode = "decimal"; inp.id = "budget-" + idx; inp.setAttribute("aria-label", "Budget mensile " + n);
-      inp.value = stato.budget[n] ? scriviImporto(Number(stato.budget[n])) : "";
+      inp.value = bud[n] ? scriviImporto(Number(bud[n])) : "";
       inp.placeholder = "0,00"; inp.style.maxWidth = "110px"; inp.style.textAlign = "right";
       var cAnno = r.insertCell(); cAnno.className = "num";
-      var m = Number(stato.budget[n]) || 0; totMese += m;
+      var m = Number(bud[n]) || 0; totMese += m;
       cAnno.textContent = m ? euro.format(arrotonda(m * 12)) : "—";
       inp.addEventListener("change", function () {
         var v = leggiImporto(inp.value);
         if (inp.value.trim() && v === null) { inp.setCustomValidity("Scrivi un importo come 120 o 120,50"); inp.reportValidity(); return; }
         inp.setCustomValidity("");
-        if (v) stato.budget[n] = v; else delete stato.budget[n];
+        // Il budget di quest'anno nasce come copia di quello che stavi vedendo.
+        if (!stato.budgetAnni[anno]) stato.budgetAnni[anno] = Object.assign({}, budgetDi(anno).valori);
+        if (v) stato.budgetAnni[anno][n] = v; else delete stato.budgetAnni[anno][n];
         salva(); disegnaConti();
       });
       c.appendChild(inp);
@@ -411,6 +453,33 @@
   }
   $("conti-anno").addEventListener("change", disegnaConti);
   $("conti-periodo").addEventListener("change", disegnaConti);
+
+  // Consuntivo dell'anno da aprire in Excel: categorie per righe, mesi per colonne, poi budget e differenza.
+  function creaCsvConsuntivo(anno) {
+    var bud = budgetDi(anno).valori;
+    var nomi = nomiCategorie().slice();
+    stato.spese.forEach(function (s) { if (s.data.slice(0, 4) === anno && nomi.indexOf(s.categoria) === -1) nomi.push(s.categoria); });
+    var mesiCorti = NOMI_MESI.map(function (m) { return m.slice(0, 3); });
+    var righe = [["Consuntivo " + anno].join(";"), ["Categoria"].concat(mesiCorti, ["Totale speso", "Budget anno", "Differenza"]).join(";")];
+    var totMesi = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], totS = 0, totB = 0;
+    nomi.forEach(function (n) {
+      var m = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      stato.spese.forEach(function (s) { if (s.categoria === n && s.data.slice(0, 4) === anno) m[Number(s.data.slice(5, 7)) - 1] += s.importo; });
+      var tot = arrotonda(m.reduce(function (a, b) { return a + b; }, 0));
+      var b = arrotonda((Number(bud[n]) || 0) * 12);
+      if (!tot && !b) return;
+      m.forEach(function (v, i) { totMesi[i] += v; });
+      totS += tot; totB += b;
+      righe.push([csvCampo(n)].concat(m.map(function (v) { return scriviImporto(arrotonda(v)); }), [scriviImporto(tot), scriviImporto(b), scriviImporto(arrotonda(tot - b))]).join(";"));
+    });
+    righe.push(["Totale"].concat(totMesi.map(function (v) { return scriviImporto(arrotonda(v)); }), [scriviImporto(arrotonda(totS)), scriviImporto(arrotonda(totB)), scriviImporto(arrotonda(totS - totB))]).join(";"));
+    return "﻿" + righe.join("\r\n");
+  }
+  $("bottone-consuntivo-excel").addEventListener("click", function () {
+    var anno = $("conti-anno").value || annoOggi();
+    var nome = "consuntivo-" + anno + ".csv";
+    condividiOScarica(new Blob([creaCsvConsuntivo(anno)], { type: "text/csv;charset=utf-8" }), nome, function () {});
+  });
 
   // ---------- categorie ----------
   function disegnaCategorie() {
@@ -429,7 +498,7 @@
             stato.categorie = stato.categorie.filter(function (x) { return x.nome !== c.nome; });
             stato.spese.forEach(function (s) { if (s.categoria === c.nome) s.categoria = "Altro"; });
             Object.keys(stato.imparate).forEach(function (k) { if (stato.imparate[k] === c.nome) delete stato.imparate[k]; });
-            delete stato.budget[c.nome];
+            Object.keys(stato.budgetAnni).forEach(function (a) { delete stato.budgetAnni[a][c.nome]; });
             salva(); disegna();
           });
         });
@@ -459,22 +528,27 @@
       righe.push([p[2] + "/" + p[1] + "/" + p[0], csvCampo(s.descrizione), csvCampo(s.categoria), scriviImporto(s.importo)].join(";"));
     });
     righe.push("");
-    righe.push("Budget mensile;Categoria;;Importo");
-    nomiCategorie().forEach(function (n) { if (stato.budget[n]) righe.push(["BUDGET", csvCampo(n), "", scriviImporto(Number(stato.budget[n]))].join(";")); });
+    righe.push("Budget mensile;Categoria;Anno;Importo");
+    Object.keys(stato.budgetAnni).sort().forEach(function (anno) {
+      var b = stato.budgetAnni[anno];
+      Object.keys(b).forEach(function (n) { if (b[n]) righe.push(["BUDGET", csvCampo(n), anno, scriviImporto(Number(b[n]))].join(";")); });
+    });
     return "﻿" + righe.join("\r\n");
   }
-  $("bottone-esporta").addEventListener("click", function () {
-    var nome = "spese-" + oggiIso() + ".csv";
-    var blob = new Blob([creaCsv()], { type: "text/csv;charset=utf-8" });
+  // Sul telefono apre «Condividi» (salva in File, manda per mail...); dove non si può, scarica il file.
+  function condividiOScarica(blob, nome, fatto) {
     var file = null;
     try { file = new File([blob], nome, { type: "text/csv" }); } catch (e) { file = null; }
-    function fatto() { stato.ultimaCopia = new Date().toISOString(); salva(); disegnaAltro(); }
     if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
       navigator.share({ files: [file], title: nome }).then(fatto).catch(function (e) {
         if (e && e.name === "AbortError") return;
         scarica(blob, nome); fatto();
       });
     } else { scarica(blob, nome); fatto(); }
+  }
+  $("bottone-esporta").addEventListener("click", function () {
+    var nome = "spese-" + oggiIso() + ".csv";
+    condividiOScarica(new Blob([creaCsv()], { type: "text/csv;charset=utf-8" }), nome, function () { stato.ultimaCopia = new Date().toISOString(); salva(); disegnaAltro(); });
   });
   function scarica(blob, nome) {
     var a = document.createElement("a");
@@ -510,7 +584,11 @@
       righe.forEach(function (r, idx) {
         if (idx === 0 || r.length < 4 || (r.length === 1 && !r[0])) return;
         if (r[0] === "Budget mensile") return;
-        if (r[0] === "BUDGET") { var vb = leggiImporto(r[3]); if (vb) budget[r[1]] = vb; return; }
+        if (r[0] === "BUDGET") {
+          var vb = leggiImporto(r[3]), ab = /^\d{4}$/.test(r[2]) ? r[2] : annoOggi();
+          if (vb) { budget[ab] = budget[ab] || {}; budget[ab][r[1]] = vb; }
+          return;
+        }
         var m = r[0].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
         var imp = leggiImporto(r[3]);
         if (!m || imp === null || !r[1]) { if (r.join("").trim()) scartate++; return; }
@@ -521,7 +599,7 @@
         $("file-importa").value = "";
         if (!si) return;
         stato.spese = spese;
-        Object.keys(budget).forEach(function (n) { stato.budget[n] = budget[n]; });
+        Object.keys(budget).forEach(function (a) { stato.budgetAnni[a] = Object.assign(stato.budgetAnni[a] || {}, budget[a]); });
         spese.forEach(function (s) { if (nomiCategorie().indexOf(s.categoria) === -1) stato.categorie.splice(Math.max(0, stato.categorie.length - 1), 0, { nome: s.categoria, parole: [] }); });
         salva(); disegna();
         alertAltro("Ricaricate " + spese.length + " spese.", false);

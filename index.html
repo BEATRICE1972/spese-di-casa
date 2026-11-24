@@ -114,7 +114,8 @@
   <section id="vista-spese" hidden>
     <h1>Spese</h1>
     <div class="riga">
-      <label for="filtro-mese">Mese <input id="filtro-mese" type="month"></label>
+      <label for="filtro-anno">Anno <select id="filtro-anno"></select></label>
+      <label for="filtro-mese">Mese <select id="filtro-mese"></select></label>
       <label for="filtro-categoria">Categoria <select id="filtro-categoria"></select></label>
     </div>
     <div class="totale"><span id="conteggio-spese">0 spese</span><span id="totale-spese" class="num">0,00 €</span></div>
@@ -132,8 +133,10 @@
     <h2 id="titolo-consuntivo">Consuntivo</h2>
     <div class="tabella-box carta"><table id="tabella-consuntivo"></table></div>
     <p class="nota">Budget del periodo = budget mensile × mesi del periodo («Da gennaio a oggi»: fino al mese in corso compreso). Differenza = speso − budget: in rosso se hai speso di più.</p>
-    <h2>Budget mensile per categoria</h2>
-    <p class="nota">Scrivi quanto pensi di spendere in un mese. L'anno è il mese × 12.</p>
+    <button type="button" id="bottone-consuntivo-excel">Scarica il consuntivo dell'anno (si apre in Excel)</button>
+    <h2 id="titolo-budget">Budget mensile per categoria</h2>
+    <p class="nota">Scrivi quanto pensi di spendere in un mese. L'anno è il mese × 12. Ogni anno ha il suo budget.</p>
+    <p class="nota" id="nota-budget-anno"></p>
     <div class="tabella-box carta"><table id="tabella-budget"></table></div>
   </section>
 
