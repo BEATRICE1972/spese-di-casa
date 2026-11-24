@@ -216,12 +216,32 @@
   // ---------- microfono ----------
   var Riconoscitore = window.SpeechRecognition || window.webkitSpeechRecognition;
   var ascolto = null;
-  if (!Riconoscitore) {
+  var timerAscolto = null;
+  // Su iPhone e iPad il riconoscimento vocale del browser si può bloccare (soprattutto aperto dall'icona):
+  // lì si usa solo il microfono della tastiera, che è del telefono e funziona sempre.
+  var suIphone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  function chiudiAscolto() {
+    if (timerAscolto) { clearTimeout(timerAscolto); timerAscolto = null; }
+    if (!ascolto) return;
+    var r = ascolto;
+    ascolto = null;
+    r.onresult = r.onerror = r.onend = null;
+    try { r.abort(); } catch (e) { /* già fermo */ }
+    $("bottone-microfono").classList.remove("ascolto");
+    $("scritta-microfono").textContent = "Tocca e detta la spesa";
+    if ($("frase").value.trim()) mostraMessaggio("Controlla i campi qui sotto e tocca «Salva la spesa».");
+  }
+  if (!Riconoscitore || suIphone) {
     $("bottone-microfono").hidden = true;
     $("frase").placeholder = "Tocca il microfono della tastiera e detta: es. «ieri revisione macchina 85 euro»";
   } else {
     $("bottone-microfono").addEventListener("click", function () {
-      if (ascolto) { ascolto.stop(); return; }
+      if (ascolto) {
+        // Si chiede di fermarsi; se dopo un secondo e mezzo non si è fermato, si spegne d'autorità.
+        try { ascolto.stop(); } catch (e) { /* niente */ }
+        setTimeout(chiudiAscolto, 1500);
+        return;
+      }
       var r = new Riconoscitore();
       r.lang = "it-IT";
       r.interimResults = true;
@@ -245,13 +265,10 @@
         };
         mostraMessaggio(spiega[ev.error] || "Il microfono non ha funzionato: usa il microfono della tastiera.", true);
       };
-      r.onend = function () {
-        ascolto = null;
-        $("bottone-microfono").classList.remove("ascolto");
-        $("scritta-microfono").textContent = "Tocca e detta la spesa";
-        if ($("frase").value.trim()) mostraMessaggio("Controlla i campi qui sotto e tocca «Salva la spesa».");
-      };
-      try { r.start(); } catch (e) { r.onend(); mostraMessaggio("Il microfono non è partito: usa il microfono della tastiera.", true); }
+      r.onend = chiudiAscolto;
+      // Rete di sicurezza: dopo 15 secondi il microfono si spegne comunque, così non resta mai appeso.
+      timerAscolto = setTimeout(chiudiAscolto, 15000);
+      try { r.start(); } catch (e) { chiudiAscolto(); mostraMessaggio("Il microfono non è partito: usa il microfono della tastiera.", true); }
     });
   }
 
