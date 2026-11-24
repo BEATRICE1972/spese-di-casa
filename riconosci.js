@@ -167,7 +167,9 @@
   }
 
   function pulisciDescrizione(s) {
-    return s
+    return (" " + s + " ")
+      // La dettatura del telefono aggiunge punti e virgole: si tolgono (l'importo è già stato letto).
+      .replace(/[.,;:!?]+(?=\s|$)/g, " ")
       .replace(/\s(euro|eur|€|ho speso|speso|spesi|pagato|pagata|pagati|ho pagato|di|per|il|la|lo|le|i|gli|un|una|uno|al|alla|allo|ai|del|della|dal|dalla)(?=\s)/gi, function (m, p, off, tutto) {
         return " " + p + " ";
       })
@@ -175,7 +177,7 @@
       .replace(/\s(euro|eur|€)(?=\s)/gi, " ")
       .replace(/\s+/g, " ")
       .replace(/^\s*(di|per|il|la|lo|al|alla|e)\s/i, "")
-      .replace(/\s(di|per|e|il|la)\s*$/i, "")
+      .replace(/\s(di|per|e|il|la|a|da|in|al|alla)\s*$/i, "")
       .trim();
   }
 

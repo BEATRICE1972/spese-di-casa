@@ -135,8 +135,14 @@
     categoriaProposta = r.categoria;
   }
   $("frase").addEventListener("input", function () { applicaFrase($("frase").value); });
+  $("frase").addEventListener("change", function () { applicaFrase($("frase").value); });
   $("campo-descrizione").addEventListener("change", function () {
     if (inModifica) return;
+    // Se la frase intera è stata scritta qui ("benzina a 50 euro"), si legge come la frase in alto.
+    if (!$("campo-importo").value.trim() && /\d|euro|€/i.test($("campo-descrizione").value)) {
+      applicaFrase($("campo-descrizione").value);
+      return;
+    }
     var c = R.scegliCategoria($("campo-descrizione").value, stato.categorie, stato.imparate);
     if (nomiCategorie().indexOf(c) !== -1) { $("campo-categoria").value = c; categoriaProposta = c; }
   });
@@ -151,6 +157,11 @@
 
   $("modulo").addEventListener("submit", function (ev) {
     ev.preventDefault();
+    // Ultima occasione: importo vuoto ma frase scritta (in alto o nella descrizione) -> si rilegge.
+    if (!inModifica && !$("campo-importo").value.trim()) {
+      var daRileggere = $("frase").value.trim() || $("campo-descrizione").value.trim();
+      if (daRileggere) applicaFrase(daRileggere);
+    }
     var data = $("campo-data").value;
     var importo = leggiImporto($("campo-importo").value);
     var descrizione = $("campo-descrizione").value.trim();

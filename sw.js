@@ -1,5 +1,5 @@
 // Tiene una copia dei file dell'app, così si apre anche senza internet.
-var VERSIONE = "spese-v1";
+var VERSIONE = "spese-v2";
 var FILE = ["./", "index.html", "app.js", "riconosci.js", "manifest.json", "icona-180.png", "icona-192.png", "icona-512.png"];
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(VERSIONE).then(function (c) { return c.addAll(FILE); }).then(function () { return self.skipWaiting(); }));
